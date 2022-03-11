@@ -1,40 +1,94 @@
+# IPK - Počítačové komunikace a sítě
+## 1. projekt
+### Author: Alina Vinogradova, 2BIT
+### [xvinog00@stud.fit.vutbr.cz](mailto:xvinog00@stud.fit.vutbr.cz)
 
-# IPK - Computer Communications and Networks - Project 1
-## HTTP server v C
-### ZADÁNÍ:
-Úkolem je vytvoření serveru v jazyce C/C++ komunikujícího prostřednictvím protokolu HTTP, který bude poskytovat různé informace o systému. Server bude naslouchat na zadaném portu a podle url bude vracet požadované informace. Server musí správně zpracovávat hlavičky HTTP a vytvářet správné HTTP odpovědi. 
-Typ odpovědi bude text/plain. Komunikace se serverem by měla být možná jak pomocí webového prohlížeče, tak nástroji typu wget a curl. Server musí být spustitelný v prostředí Linux Ubuntu 20.04 LTS.
+## Aplikace: HTTP server v jazyce C
+Server komunikující prostřednictvím protokolu HTTP poskytuje informace o systému klienta: **hostname**, **cpu-name** a **current cpu load**.<br>
+<br>Dostupné k použití dotazy:
+1. ```GET http://servername:12345/hostname```
+2. ```GET http://servername:12345/cpu-name```
+3. ```GET http://servername:12345/load```
 
-Server bude přeložitelný pomocí Makefile, který vytvoří spustitelný soubor hinfosvc.
+Komunikace se serverem je možná s pomocí následujících nástrojů: webový prohlížeč, [wget](https://www.gnu.org/software/wget/), [curl](https://curl.se/).
 
 ## Syntax spuštění
 `./hinfosvc [-p port]`
 
-kde `[-p port]` je argumentem označující lokální port na kterém bude naslouchat požadavkům.
+kde `[-p port]` je lokální port na kterém server bude naslouchat požadavkům.
 
-Server bude možné ukončit pomocí CTRL+C. Server bude umět zpracovat následující tři typy dotazů, které jsou na server zaslané příkazem GET:
+Server je možné ukončit pomocí `CTRL+C`. Umí zpracovat následující tři typy dotazů, které jsou na server zaslané příkazem GET:
 
-- Získání doménového jména
+`./hinfosvc 12345 &` - spuštění serveru na portu 12345 v pozadí.
+
+1. Získání doménového jména:
+```
+    $ GET http://localhost:12345/hostname
     
-    Vrací síťové jméno počítače včetně domény, například:
-    ```
-    GET http://servername:12345/hostname
+    alja
+```
+
+```
+    $ curl -i http://localhost:12345/hostname
     
-    merlin.fit.vutbr.cz
-    ```
-- Získání informací o CPU
+    HTTP/1.1 200 OK
+    Content-Length: 4
+    Content-Type: text/plain;
 
-    Vrací informaci o procesoru, například:
-    ```
-    GET http://servername:12345/cpu-name
+    alja
+```
+2. Získání informací o CPU:
+```
+    $ GET http://localhost:12345/cpu-name
 
-    Intel(R) Xeon(R) CPU E5-2640 0 @ 2.50GHz
-    ```
-- Aktuální zátěž 
+    Ryzen 7 3700U with Radeon Vega Mobile Gfx
+```
 
-    Vrací aktuální informace o zátěži. (Výpočet z hodnot uvedených v souboru /proc/stat). Výsledek je například:
-    ```
-    GET http://servername:12345/load
+```
+    $ curl -i http://localhost:12345/cpu-name
+    
+    HTTP/1.1 200 OK
+    Content-Length: 41
+    Content-Type: text/plain;
 
-    65%
-    ```
+    Ryzen 7 3700U with Radeon Vega Mobile Gfx
+```
+3. Aktuální zátěž. (Výpočet z hodnot uvedených v souboru `/proc/stat`):
+
+
+    
+```
+    $ GET http://localhost:12345/load
+    
+    17%
+```
+
+```
+    $ curl -i http://localhost:12345/load
+    
+    HTTP/1.1 200 OK
+    Content-Length: 3
+    Content-Type: text/plain;
+
+    18%
+```
+
+### Prevence chyb
+1. `404 Not Found`
+```
+    $ curl -i http://localhost:12345/wrong
+    
+    HTTP/1.1 404 Not Found
+    Content-Length: 0
+    Content-Type: text/plain;
+
+```
+2. `405 Method Not Allowed`
+```
+    $ curl -i -X POST http://localhost:12345/cpu-name
+    
+    HTTP/1.1 405 Method Not Allowed
+    Content-Length: 0
+    Content-Type: text/plain;
+
+```
