@@ -12,6 +12,22 @@ Server komunikující prostřednictvím protokolu HTTP poskytuje informace o sys
 
 Komunikace se serverem je možná s pomocí následujících nástrojů: webový prohlížeč, [wget](https://www.gnu.org/software/wget/), [curl](https://curl.se/).
 
+## Překlad souboru 
+`make` v kořenovém adresáři projektu.
+```
+    $ ls
+    
+    hinfosvc.c Makefile Readme.md
+    
+    $ make
+    
+    gcc -Wall -Werror hinfosvc.c -o hinfosvc
+    
+    $ ls
+     
+    hinfosvc  hinfosvc.c  Makefile  README.md
+```
+
 ## Syntax spuštění
 `./hinfosvc [-p port]`
 

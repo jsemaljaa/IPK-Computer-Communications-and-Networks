@@ -5,7 +5,7 @@ TARGET = hinfosvc
 all: $(TARGET)
 
 hinfosvc: $(TARGET).c
-	$(CC) $(CFLAGS) -o $(TARGET) $(TARGET).c
+	$(CC) $(CFLAGS) $(TARGET).c -o $(TARGET)
 
 clean:
 	$(RM) $(TARGET)
