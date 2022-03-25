@@ -1,19 +1,19 @@
-# IPK - Počítačové komunikace a sítě
-## 1. projekt
+# IPK - Computer communications and networks
+## 1 project
 ### Author: Alina Vinogradova, 2BIT
 ### [xvinog00@stud.fit.vutbr.cz](mailto:xvinog00@stud.fit.vutbr.cz)
 
-## Aplikace: HTTP server v jazyce C
-Server komunikující prostřednictvím protokolu HTTP poskytuje informace o systému klienta: **hostname**, **cpu-name** a **current cpu load**.<br>
-<br>Dostupné k použití dotazy:
+## Application: HTTP server in C language
+The HTTP server provides information about the client system: **hostname**, **cpu-name** a **current cpu load**.<br>
+<br>Requests available for use:
 1. ```GET http://servername:12345/hostname```
 2. ```GET http://servername:12345/cpu-name```
 3. ```GET http://servername:12345/load```
 
-Komunikace se serverem je možná s pomocí následujících nástrojů: webový prohlížeč, [wget](https://www.gnu.org/software/wget/), [curl](https://curl.se/).
+Communication with the server is possible with the following tools: Web browser, [wget](https://www.gnu.org/software/wget/), [curl](https://curl.se/).
 
-## Překlad souboru 
-`make` v kořenovém adresáři projektu.
+## File compilation
+`make` in the root directory of the project.
 ```
     $ ls
     
@@ -28,16 +28,16 @@ Komunikace se serverem je možná s pomocí následujících nástrojů: webový
     hinfosvc  hinfosvc.c  Makefile  README.md
 ```
 
-## Syntax spuštění
+## Execution syntax
 `./hinfosvc [-p port]`
 
-kde `[-p port]` je lokální port na kterém server bude naslouchat požadavkům.
+where `[-p port]` is the local port on which the server will listen for requests.
 
-Server je možné ukončit pomocí `CTRL+C`. Umí zpracovat následující tři typy dotazů, které jsou na server zaslané příkazem GET:
+The server can be shut down using `CTRL+C`. It can process the following three types of requests that are sent to the server by the GET command:
 
-`./hinfosvc 12345 &` - spuštění serveru na portu 12345 v pozadí.
+`./hinfosvc 12345 &` - server startup on port 12345 in the background.
 
-1. Získání doménového jména:
+1. Obtaining a domain name:
 ```
     $ GET http://localhost:12345/hostname
     
@@ -53,7 +53,7 @@ Server je možné ukončit pomocí `CTRL+C`. Umí zpracovat následující tři 
 
     alja
 ```
-2. Získání informací o CPU:
+2. Getting CPU information:
 ```
     $ GET http://localhost:12345/cpu-name
 
@@ -69,7 +69,7 @@ Server je možné ukončit pomocí `CTRL+C`. Umí zpracovat následující tři 
 
     Ryzen 7 3700U with Radeon Vega Mobile Gfx
 ```
-3. Aktuální zátěž. (Výpočet z hodnot uvedených v souboru `/proc/stat`):
+3. Current load. (Calculation from the values given in the file `/proc/stat`):
 
 
     
@@ -89,7 +89,7 @@ Server je možné ukončit pomocí `CTRL+C`. Umí zpracovat následující tři 
     18%
 ```
 
-### Prevence chyb
+### Error prevention
 1. `404 Not Found`
 ```
     $ curl -i http://localhost:12345/wrong
