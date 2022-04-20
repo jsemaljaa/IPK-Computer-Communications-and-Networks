@@ -3,6 +3,8 @@
 ### Author: Alina Vinogradova, 2BIT
 ### [xvinog00@stud.fit.vutbr.cz](mailto:xvinog00@stud.fit.vutbr.cz)
 
+Evaluation: 20/20
+
 ## Application: HTTP server in C language
 The HTTP server provides information about the client system: **hostname**, **cpu-name** a **current cpu load**.<br>
 <br>Requests available for use:
