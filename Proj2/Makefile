@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -lpcap -std=gnu99 -Wall -Werror -pedantic
+CFLAGS = -lpcap
 TARGET = ipk-sniffer
 
 all: $(TARGET)

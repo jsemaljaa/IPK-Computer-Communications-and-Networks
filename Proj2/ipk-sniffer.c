@@ -11,6 +11,7 @@
 #include <stdbool.h>
 #include <pcap.h>
 #include <time.h>
+#include <ctype.h>
 
 #include <arpa/inet.h>          // for inet_ntoa()
 #include <netinet/ip_icmp.h>	// declarations for icmp header
@@ -27,15 +28,8 @@
 #define PROTOCOL_TCP 6
 #define PROTOCOL_UDP 17
 
-#define MACSTR "%02X:%02X:%02X:%02X:%02X:%02X"
-
-int headerLen;
-pcap_t* handle;
-
-bool tcp = false;
-bool udp = false;
-bool icmp = false;
-bool arp = false;
+#define MACSTR "%02x:%02x:%02x:%02x:%02x:%02x"
+#define IPSTR "%u:%u:%u:%u"
 
 const char *helpMessage =
         "Packets sniffer in C using pcap.h\n"
@@ -231,7 +225,7 @@ pcap_t* handling_pcap(char* device, const char* filter){
     return handle;
 }
 
-void print_packet(char *timestamp, char *srcMAC, int srcP, char *srcIP, char *dstMAC, int dstP, char *dstIP, int len){
+void display_packet_data(char *timestamp, char *srcMAC, int srcP, char *srcIP, char *dstMAC, int dstP, char *dstIP, int len){
     printf("timestamp: %s\n", timestamp);
     printf("src MAC: %s\n", srcMAC);
     printf("dst MAC: %s\n", dstMAC);
@@ -241,6 +235,33 @@ void print_packet(char *timestamp, char *srcMAC, int srcP, char *srcIP, char *ds
     printf("src port: %d\n", srcP);
     printf("dst port: %d\n", dstP);
     printf("\n");
+}
+
+void display_packet_dump(const u_char* packet, const int len){
+
+    // Source: https://stackoverflow.com/a/7776146
+    // 16 values per one line
+    const int line = 16;
+    unsigned char buff[line + 1];
+
+    int i;
+    for (i = 0; i < len; ++i) {
+        if((i % line) == 0){
+            if(i != 0) printf("  %s\n", buff);
+            printf("0x%04X:", i);
+        }
+        printf(" %02x", packet[i]);
+        if(i % 16 == 7) printf(" ");
+        isprint(packet[i]) ? (buff[i % line] = packet[i]) : (buff[i % line] = '.');
+        buff[(i % line) + 1] = '\0';
+    }
+
+    while((i % line) != 0){
+        printf("   ");
+        i++;
+    }
+
+    printf("  %s\n", buff);
 }
 
 char *timestamp_ctor(struct timeval ts_time){
@@ -302,8 +323,8 @@ void got_packet(u_char *args, struct pcap_pkthdr *header, u_char *packet){
         case ETHERTYPE_ARP:
             // ARP has 42 bytes in total, the first 14 bytes is Ethernet frame header
             arphdr = (struct ether_arp *)(packet + 14);
-            sprintf(sourceIP, "%u:%u:%u:%u", arphdr->arp_spa[0], arphdr->arp_spa[1], arphdr->arp_spa[2], arphdr->arp_spa[3]);
-            sprintf(destinationIP, "%u:%u:%u:%u", arphdr->arp_tpa[0], arphdr->arp_tpa[1], arphdr->arp_tpa[2], arphdr->arp_tpa[3]);
+            sprintf(sourceIP, IPSTR, arphdr->arp_spa[0], arphdr->arp_spa[1], arphdr->arp_spa[2], arphdr->arp_spa[3]);
+            sprintf(destinationIP, IPSTR, arphdr->arp_tpa[0], arphdr->arp_tpa[1], arphdr->arp_tpa[2], arphdr->arp_tpa[3]);
             break;
         case ETHERTYPE_IP:
             iphdr = (struct ip *)(packet + ethhdrSize);
@@ -340,12 +361,8 @@ void got_packet(u_char *args, struct pcap_pkthdr *header, u_char *packet){
         default:
             break;
     }
-    print_packet(timestamp, sourceMAC, sourcePort, sourceIP, destinationMAC, destinationPort, destinationIP, header->len);
-}
-
-void signal_handler(int signalNo){
-    pcap_close(handle);
-    exit(signalNo);
+    display_packet_data(timestamp, sourceMAC, sourcePort, sourceIP, destinationMAC, destinationPort, destinationIP, header->len);
+    display_packet_dump(packet, header->len);
 }
 
 char *filter_ctor(params_t p){
@@ -370,6 +387,7 @@ int main(int argc, char *argv[]){
 
     char *filter = filter_ctor(p);
 
+    pcap_t* handle;
     handle = handling_pcap(p.interface, filter);
     if(handle == NULL){
         exit(-1);
