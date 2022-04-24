@@ -11,47 +11,62 @@
 #include <stdbool.h>
 #include <pcap.h>
 #include <signal.h>             // signal()
-
+#include <time.h>
 
 #include <arpa/inet.h>          // for inet_ntoa()
 #include <netinet/ip_icmp.h>	// declarations for icmp header
 #include <netinet/udp.h>	    // declarations for udp header
 #include <netinet/tcp.h>	    // declarations for tcp header
 #include <netinet/ip.h>	        // declarations for ip header
+#include <netinet/ip6.h>
 
 #define IPv4_T 2048
 #define IPv6_T 34525
+#define MAX_BUFF 256
+#define MAX_TIMESTAMP_LEN 30
 
-int header;
+int headerLen;
+pcap_t* handle;
+
+bool tcp = false;
+bool udp = false;
+bool icmp = false;
+bool arp = false;
 
 const char *helpMessage =
         "Packets sniffer in C using pcap.h\n"
         "Usage:\n"
         "       ./ipk-sniffer [-i interface_name | --interface interface_name] {-p port} {[--tcp|-t] [--udp|-u] [--arp] [--icmp] } {-n num}\n"
         "Where:\n"
-        "       [-i interface_name | --interface interface_name]\n "
-        "       is just one interface on which to listen.\n"
-        "       If this parameter is not specified, or if only -i is specified without a value,\n "
-        "       the list of active interfaces is printed.\n"
+        "[-i interface_name | --interface interface_name] is just one interface on which to listen.\n"
+        "                                                 If this parameter is not specified, or if only -i is specified without a value,\n"
+        "                                                 the list of active interfaces is printed.\n"
+        " ----------------------------------------------------------------------------------------------------------------------------------------------\n"
+        "{-p port}                                        will filter packets on a given interface by port;\n "
+        "                                                if this parameter is not specified, all ports are considered;\n"
+        "                                                 if the parameter is specified, the port can occur in both the source and destination part.\n"
+        " ----------------------------------------------------------------------------------------------------------------------------------------------\n"
+        "[-t | --tcp]                                     will display only TCP packets.\n"
+        " ----------------------------------------------------------------------------------------------------------------------------------------------\n"
+        "[-u | --udp]                                     will display only UDP packets.\n"
+        " ----------------------------------------------------------------------------------------------------------------------------------------------\n"
+        "[--icmp]                                         will display only ICMPv6 and ICMPv4 packets.\n"
         "\n"
-        "       {-p port}\n "
-        "       will filter packets on a given interface by port;\n "
-        "       if this parameter is not specified, all ports are considered;\n"
-        "       if the parameter is specified, the port can occur in both the source and destination part.\n"
-        "\n"
-        "       [-t | --tcp]\n"
-        "       will display only TCP packets.\n"
-        "       [-u | --udp]";
+        "Unless specific protocols are specified, all protocols are considered for printing\n"
+        " ----------------------------------------------------------------------------------------------------------------------------------------------\n"
+        "[-n num]                                         specifies the number of packets to be displayed.\n"
+        "                                                 If not specified, consider displaying only one packet, as if -n 1\n";
 
 enum errCodes{
     E_OK = 0,
     E_FINDDEVS,
     E_PCONFLICT,
-    E_NOOPTARG
+    E_NOOPTARG,
+    E_HANDLE
 };
 
 typedef struct parameters {
-    char interface[256];
+    char interface[MAX_BUFF];
     char port[10];
     int packets_number;
     bool tcp;
@@ -135,6 +150,8 @@ params_t parameters_parsing(int argc, char *argv[]){
                 p.packets_number = atoi(optarg);
                 break;
             case 'h':
+                printf("%s", helpMessage);
+                exit(0);
                 break;
         }
     }
@@ -151,17 +168,24 @@ params_t parameters_parsing(int argc, char *argv[]){
 
     if(allPackets || nonePackets){
         p.printAll = true;
+    } else {
+        tcp = p.tcp;
+        udp = p.udp;
+        icmp = p.icmp;
+        arp = p.arp;
     }
 
+    if(p.packets_number == 0) p.packets_number = 1;
     return p;
 }
 
 pcap_t* handling_pcap(char* device, const char* filter){
+
     char errbuf[PCAP_ERRBUF_SIZE];
     pcap_t *handle = NULL;
     pcap_if_t *devices = NULL, *dev = NULL;
     struct bpf_program bpf;
-    bpf_u_int32 netmask, sourceip;
+    bpf_u_int32 netmask, sourceIP;
 
     /* Obtaining a list of available devices in case
      * the interface was not specified by user */
@@ -179,111 +203,173 @@ pcap_t* handling_pcap(char* device, const char* filter){
     }
 
     /* Opening the device for data capturing */
+
+    if(pcap_lookupnet(device, &sourceIP, &netmask, errbuf) == -1){
+        fprintf(stderr, "Can't get netmask for device %s\n", device);
+        return NULL;
+    }
+
     handle = pcap_open_live(device, BUFSIZ, 1, 1000, errbuf);
     if(handle == NULL){
-        fprintf(stderr, "pcap_open_live: %s\n", errbuf);
+        fprintf(stderr, "Couldn't open device %s: %s\n", device, errbuf);
         return NULL;
     }
 
-    if(pcap_lookupnet(device, &sourceip, &netmask, errbuf) == PCAP_ERROR){
-        fprintf(stderr, "pcap_lookupnet: %s\n", errbuf);
+    if(pcap_compile(handle, &bpf, (char *)filter, 0, netmask) == -1){
+        fprintf(stderr, "Couldn't parse filter %s: %s\n", filter, pcap_geterr(handle));
         return NULL;
     }
 
-    if(pcap_compile(handle, &bpf, (char *)filter, 0, netmask) == PCAP_ERROR){
-        fprintf(stderr, "pcap_compile: %s\n", errbuf);
-        return NULL;
-    }
-
-    if(pcap_setfilter(handle, &bpf) == PCAP_ERROR){
-        fprintf(stderr, "pcap_setfilter: %s\n", errbuf);
+    if(pcap_setfilter(handle, &bpf) == -1){
+        fprintf(stderr, "Couldn't install filter %s: %s\n", filter, pcap_geterr(handle));
         return NULL;
     }
 
     return handle;
 }
 
-void get_link_header_len(pcap_t* handle){
-    int linktype;
+void get_header_len_by_link(pcap_t* handle){
+    int link_type;
 
-    if((linktype = pcap_datalink(handle)) == PCAP_ERROR){
+    if((link_type = pcap_datalink(handle)) < 0){
         fprintf(stderr, "pcap_datalink: %s\n", pcap_geterr(handle));
         return;
     }
 
-    switch (linktype) {
+    switch (link_type) {
         case DLT_NULL:
-            header = 4;
+            headerLen = 4;
             break;
         case DLT_EN10MB:
-            header = 14;
+            headerLen = 14;
             break;
         case DLT_SLIP:
         case DLT_PPP:
-            header = 24;
+            headerLen = 24;
             break;
         default:
-            fprintf(stderr, "error datalink (%d)\n", linktype);
-            header = 0;
+            fprintf(stderr, "error datalink (%d)\n", link_type);
+            headerLen = 0;
+            return;
     }
 }
 
-void packet_handler(u_char *user, const struct pcap_pkthdr *packethdr, const u_char *packetptr){
+char *timestamp_ctor(struct timeval ts_time){
+    time_t rawtime;
+    time(&rawtime);
+    struct tm *info = localtime(&rawtime);
+    static char buffer[MAX_TIMESTAMP_LEN];
+    size_t len = strftime(buffer, sizeof(buffer) - 1, "%FT%T%z", info);
+
+    gettimeofday(&ts_time, NULL);
+
+    int ms = ts_time.tv_usec/1000;
+    char ms_char[4];
+    sprintf(ms_char, "%d", ms);
+
+    if (len > 1) {
+        char minutes[] = {buffer[len-2], buffer[len-1], '\0'};
+        sprintf(buffer + len - 2, ":%s", minutes);
+        char timezone[] = {buffer[len-5], buffer[len-4], buffer[len-3], buffer[len-2], buffer[len-1], buffer[len], '\0'};
+        sprintf(buffer + len - 5, ".%s", ms_char);
+        sprintf(buffer + len - 1, "%s", timezone);
+    }
+
+    return buffer;
+}
+
+void display_base(const char *timestamp, char *srcIP, char *dstIP, struct ip* iphdr){
+    printf("timestamp: %s\n", timestamp);
+    printf("src MAC: \n");
+    printf("dst MAC: \n");
+    printf("frame length: %d bytes\n", ntohs(iphdr->ip_len));
+    printf("src IP: %s\n", srcIP);
+    printf("dst IP: %s\n", dstIP);
+}
+
+void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *buffer){
+    bool IPv6F = false, IPv4F = false;
+    int IPv6offset = 0;
+
+    char *timestamp = timestamp_ctor(header->ts);
+
     struct ip* iphdr;
+    struct ip6_hdr* ip6hdr;
+
     struct icmp* icmphdr;
+
     struct tcphdr* tcphdr;
+
     struct udphdr* udphdr;
-    char iphdrI[256];
-    char sourceip[256];
-    char destip[256];
+    char iphdrInfo[MAX_BUFF];
 
-    int packets = 10;
+    char sourceIP[MAX_BUFF];
+    char destinationIP[MAX_BUFF];
 
-    packetptr += header;
-    iphdr = (struct ip*) packetptr;
-    strcpy(sourceip, inet_ntoa(iphdr->ip_src));
-    strcpy(destip, inet_ntoa(iphdr->ip_dst));
-    sprintf(iphdrI, "ID:%d TOS:0x%x, TTL:%d IpLen:%d DgLen:%d",
-            ntohs(iphdr->ip_id), iphdr->ip_tos, iphdr->ip_ttl,
-            4*iphdr->ip_hl, ntohs(iphdr->ip_len));
+    int packets = 1;
 
-    packetptr += 4*iphdr->ip_hl;
+    buffer += headerLen;
+
+    iphdr = (struct ip*) buffer;
+
+    strcpy(sourceIP, inet_ntoa(iphdr->ip_src));
+    strcpy(destinationIP, inet_ntoa(iphdr->ip_dst));
+
+    // from the start to header->caplen
+
+    // Protocols:
+    // 1 for ICMP
+    // 6 for TCP
+    // 17 for UDP
+    sprintf(iphdrInfo, "ID:%d TOS:0x%x, TTL:%d IpLen:%d DgLen:%d",
+           ntohs(iphdr->ip_id), iphdr->ip_tos, iphdr->ip_ttl,
+           4*iphdr->ip_hl, ntohs(iphdr->ip_len));
+
+    buffer += 4*iphdr->ip_hl;
     switch (iphdr->ip_p) {
         case IPPROTO_TCP:
-            tcphdr = (struct tcphdr*)packetptr;
-            printf("TCP  %s:%d -> %s:%d\n", sourceip, ntohs(tcphdr->th_sport),
-                   destip, ntohs(tcphdr->th_dport));
-            printf("%s\n", iphdrI);
-            printf("%c%c%c%c%c%c Seq: 0x%x Ack: 0x%x Win: 0x%x TcpLen: %d\n",
-                   (tcphdr->th_flags & TH_URG ? 'U' : '*'),
-                   (tcphdr->th_flags & TH_ACK ? 'A' : '*'),
-                   (tcphdr->th_flags & TH_PUSH ? 'P' : '*'),
-                   (tcphdr->th_flags & TH_RST ? 'R' : '*'),
-                   (tcphdr->th_flags & TH_SYN ? 'S' : '*'),
-                   (tcphdr->th_flags & TH_SYN ? 'F' : '*'),
-                   ntohl(tcphdr->th_seq), ntohl(tcphdr->th_ack),
-                   ntohs(tcphdr->th_win), 4*tcphdr->th_off);
-            printf("+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+\n\n");
-            packets += 1;
+            if(tcp){
+                display_base(timestamp, sourceIP, destinationIP, iphdr);
+                tcphdr = (struct tcphdr*)buffer;
+                printf("TCP ");
+                printf("%s\n", iphdrInfo);
+                printf("%c%c%c%c%c%c Seq: 0x%x Ack: 0x%x Win: 0x%x TcpLen: %d\n",
+                       (tcphdr->th_flags & TH_URG ? 'U' : '*'),
+                       (tcphdr->th_flags & TH_ACK ? 'A' : '*'),
+                       (tcphdr->th_flags & TH_PUSH ? 'P' : '*'),
+                       (tcphdr->th_flags & TH_RST ? 'R' : '*'),
+                       (tcphdr->th_flags & TH_SYN ? 'S' : '*'),
+                       (tcphdr->th_flags & TH_SYN ? 'F' : '*'),
+                       ntohl(tcphdr->th_seq), ntohl(tcphdr->th_ack),
+                       ntohs(tcphdr->th_win), 4*tcphdr->th_off);
+                printf("+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+\n\n");
+                packets += 1;
+            }
             break;
 
         case IPPROTO_UDP:
-            udphdr = (struct udphdr*)packetptr;
-            printf("UDP  %s:%d -> %s:%d\n", sourceip, ntohs(udphdr->uh_sport),
-                   destip, ntohs(udphdr->uh_dport));
-            printf("%s\n", iphdrI);
-            printf("+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+\n\n");
-            packets += 1;
+            if(udp){
+                display_base(timestamp, sourceIP, destinationIP, iphdr);
+                udphdr = (struct udphdr*)buffer;
+                printf("UDP  %s:%d -> %s:%d\n", sourceIP, ntohs(udphdr->uh_sport),
+                       destinationIP, ntohs(udphdr->uh_dport));
+                printf("%s\n", iphdrInfo);
+                printf("+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+\n\n");
+                packets += 1;
+            }
             break;
 
         case IPPROTO_ICMP:
-            icmphdr = (struct icmp*)packetptr;
-            printf("ICMP %s -> %s\n", sourceip, destip);
-            printf("%s\n", iphdrI);
-            printf("Type:%d Code:%d ID:%d Seq:%d\n", icmphdr->icmp_type, icmphdr->icmp_code,
-                   ntohs(icmphdr->icmp_hun.ih_idseq.icd_id), ntohs(icmphdr->icmp_hun.ih_idseq.icd_seq));
-            printf("+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+\n\n");
-            packets += 1;
+            if(icmp){
+                display_base(timestamp, sourceIP, destinationIP, iphdr);
+                icmphdr = (struct icmp*)buffer;
+                printf("ICMP %s -> %s\n", sourceIP, destinationIP);
+                printf("%s\n", iphdrInfo);
+                printf("Type:%d Code:%d ID:%d Seq:%d\n", icmphdr->icmp_type, icmphdr->icmp_code,
+                       ntohs(icmphdr->icmp_hun.ih_idseq.icd_id), ntohs(icmphdr->icmp_hun.ih_idseq.icd_seq));
+                printf("+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+\n\n");
+                packets += 1;
+            }
             break;
     }
 }
@@ -291,27 +377,17 @@ void packet_handler(u_char *user, const struct pcap_pkthdr *packethdr, const u_c
 void signal_handler(int signalNo){
     struct pcap_stat stats;
 
-//    if(pcap_stats(pd, &stats) >= 0){
-//        printf("\n%d packets captured\n", packets);
-//        printf("%d packets received\n", stats.ps_recv);
-//        printf("%d packets dropped\n\n", stats.ps_drop);
-//    }
+    if(pcap_stats(handle, &stats) >= 0){
+        printf("%d packets received\n", stats.ps_recv);
+        printf("%d packets dropped\n\n", stats.ps_drop);
+    }
 
-    //pcap_close(pd);
+    pcap_close(handle);
     exit(0);
 }
 
-int main(int argc, char *argv[]){
-
-    params_t p = parameters_parsing(argc, argv);
-
-    // /* Debugging */ printf("parameters: %s %s %d %d %d %d %d\n", p.interface, p.port, p.packets_number, p.tcp, p.udp, p.arp, p.icmp);
-
-    char device[256];
-    char filter[256];
-
-    *filter = 0;
-    strcpy(device, p.interface);
+char *filter_ctor(params_t p){
+    static char filter[MAX_BUFF];
 
     if (p.tcp) strcpy(filter, "tcp ");
     else if (p.udp) strcpy(filter, "udp ");
@@ -321,24 +397,32 @@ int main(int argc, char *argv[]){
     if(strcmp(p.port, "NONE")){
         strcat(filter, p.port);
     }
+    return filter;
+}
 
-    pcap_t* handle;
+int main(int argc, char *argv[]){
+
+    params_t p = parameters_parsing(argc, argv);
+
+    // /* Debugging */ printf("parameters: %s %s %d %d %d %d %d\n", p.interface, p.port, p.packets_number, p.tcp, p.udp, p.arp, p.icmp);
+
+    char *filter = filter_ctor(p);
 
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
     signal(SIGQUIT, signal_handler);
 
-    handle = handling_pcap(device, filter);
+    handle = handling_pcap(p.interface, filter);
     if(handle == NULL){
         exit(-1);
     }
 
-    get_link_header_len(handle);
-    if(header == 0){
+    get_header_len_by_link(handle);
+    if(headerLen == 0){
         exit(-1);
     }
 
-    if (pcap_loop(handle, p.packets_number, packet_handler, (u_char*)NULL) < 0) {
+    if (pcap_loop(handle, p.packets_number, got_packet, (u_char*)NULL) < 0) {
         fprintf(stderr, "pcap_loop failed: %s\n", pcap_geterr(handle));
         return -1;
     }
