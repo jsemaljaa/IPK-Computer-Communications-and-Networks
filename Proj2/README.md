@@ -1,31 +1,52 @@
-# IPK - Computer Communications and Networks - Project 2
-## Sniffer paketů
+# IPK - Computer communications and networks
+## 2 project
+### Author: Alina Vinogradova, 2BIT
+### [xvinog00@stud.fit.vutbr.cz](mailto:xvinog00@stud.fit.vutbr.cz)
 
-### ZADÁNÍ:
-Navrhněte a implementujte síťový analyzátor v C/C++/C#, který bude schopný na
-určitém síťovém rozhraním zachytávat a filtrovat pakety.
+### Application: packet sniffer in C
+Design and implement a network analyzer in C/C++/C# that will be able to
+a specific network interface to capture and filter packets.
 
-## Syntax spuštění
-`./ipk-sniffer [-i rozhraní | --interface rozhraní] {-p ­­port} {[--tcp|-t] [--udp|-u] [--arp] [--icmp] } {-n num}`
-| Příkaz | Popis |
-| --- | --- |
-| `-i [rozhraní]` nebo `--interface [rozhraní]` | `-i eth0` Právě jedno rozhraní, na kterém se bude poslouchat. Nebude-li tento parametr uveden, či bude-li uvedené jen -i bez hodnoty, vypíše se seznam aktivních rozhraní. |
-| `-p [port]` | `-p 23`Bude filtrování paketů na daném rozhraní podle portu; nebude-li tento parametr uveden, uvažují se všechny porty; pokud je parametr uveden, může se daný port vyskytnout jak v source, tak v destination části. |
-| `-t` nebo `--tcp` | Bude zobrazovat pouze TCP pakety. |
-| `-u` nebo `--udp` | Bude zobrazovat pouze UDP pakety. |
-| `--icmp` | Bude zobrazovat pouze ICMPv4 a ICMPv6 pakety. |
-| `--arp` | Bude zobrazovat pouze ARP rámce. |
-| `-n` | `-n 10` Určuje počet paketů, které se mají zobrazit, tj. i "dobu" běhu programu; pokud není uvedeno, uvažujte zobrazení pouze jednoho paketu, tedy jakoby `-n 1`.|
+## File compilation
+`make` in the root directory of the project.
+```
+    $ ls
+    
+    ipk-sniffer.c Makefile README.md manual.pdf
+    
+    $ make
+    
+    gcc ipk-sniffer.c -lpcap -Wall -Werror -o ipk-sniffer
+    
+    $ ls
+     
+    ipk-sniffer.c Makefile README.md manual.pdf ipk-sniffer
+```
 
-- Pokud nebudou konkrétní protokoly specifikovány, uvažují se k tisknutí všechny (tj. veškerý obsah, nehledě na protokol)
-- Argumenty mohou být v libovolném pořadí.
+## Execution syntax
+`sudo ./ipk-sniffer [-i interface | --interface interface] {-p port} {[--tcp|-t] [--udp|-u] [--arp] [--icmp] } {-n num}`
 
-## Formát výstupu:
-| Příkaz | Výstup |
-| --- | --- |
-| `timestamp` | Čas (ve formátu dle RFC3339) |
-| `src MAC` a `dst MAC` | MAC adresa s : jako oddělovačem |
-| `frame length` | Délka (v bytech) |
-| `src IP` a `dst IP`| Pokud je tak IP adresa (podpora v4 ale i v6 dle RFC5952) |
-| `src port` a `dst port` | Pokud je tak portové číslo |
-| `offset_vypsaných_bajtů` | Výpis_bajtů_hexa výpis_bajtů_ASCII |
+| Command                                         | Description                                                                                                                                                                                      |
+|-------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `-i [interface]` nebo `--interface [interface]` | `-i eth0` Just one interface on which to listen. If this parameter is not specified, or if only -i is specified without a value, a list of active interfaces will be printed.                    |
+| `-p [port]`                                     | `-p 23`Filters packets on a given interface by port; if this parameter is not specified, all ports are considered; if specified, the port can occur in both the source and destination sections. |
+| `-t` nebo `--tcp`                               | Will display only TCP packets.                                                                                                                                                                   |
+| `-u` nebo `--udp`                               | Will display only UDP packets.                                                                                                                                                                   |
+| `--icmp`                                        | Will display only ICMPv4 and ICMPv6 packets.                                                                                                                                                     |
+| `--arp`                                         | Will only display ARP frames.                                                                                                                                                                    |
+| `-n num`                                        | `-n 10` Specifies the number of packets to display; if not specified, consider displaying only one packet, i.e. `-n 1`. |
+
+- Unless specific protocols are specified (or if all of them are listed at once), all protocols (i.e. all content, regardless of the protocol) are considered for printing.
+- The program can be correctly terminated at any time using Ctrl+C.
+
+## Output format:
+| Command | Description                                              |
+| --- |----------------------------------------------------------|
+| `timestamp` | Time (in RFC3339 format)                                 |
+| `src MAC` a `dst MAC` | MAC address with : as separator                          |
+| `frame length` | Length (in bytes)                                        |
+| `src IP` a `dst IP`| IP address (support v4 but also v6 according to RFC5952) |
+| `src port` a `dst port` | Port number                                              |
+| `offset_vypsaných_bajtů` | Byte_dump_hexa Byte_dump_ASCII                     |
+
+## For more information check manual.pdf

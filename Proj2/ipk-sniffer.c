@@ -1,30 +1,32 @@
-//
-// Created by jsemalja on 22/3/22.
-//
-
-// gcc main.c -lpcap -o main
+/*
+ *  Computer Communications and Networks University Course
+ *  Project 2 - Packet Sniffer
+ *  Author: Alina Vinogradova (xvinog00)
+ *  Email: xvinog00@stud.fit.vubr.cz
+ */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <getopt.h>
-#include <string.h>             // memset()
+#include <string.h>
 #include <stdbool.h>
-#include <pcap.h>
 #include <time.h>
 #include <ctype.h>
 
-#include <arpa/inet.h>          // for inet_ntoa()
-#include <netinet/ip_icmp.h>	// declarations for icmp header
+#include <pcap.h>
+#include <arpa/inet.h>          // inet_ntoa(), ntohs()
 #include <netinet/udp.h>	    // declarations for udp header
 #include <netinet/tcp.h>	    // declarations for tcp header
 #include <netinet/ip.h>	        // declarations for ip header
-#include <netinet/ip6.h>
-#include <netinet/if_ether.h>
+#include <netinet/ip6.h>        // declarations for ip6 header
+#include <netinet/if_ether.h>   // declarations for ethernet header
 
 #define MAX_BUFF 256
 #define MAX_MAC_LEN 18
 #define MAX_TIMESTAMP_LEN 30
 
+#define PROTOCOL_ICMP_IPv4 1
+#define PROTOCOL_ICMP_IPv6 58
 #define PROTOCOL_TCP 6
 #define PROTOCOL_UDP 17
 
@@ -55,24 +57,23 @@ const char *helpMessage =
         "[-n num]                                         specifies the number of packets to be displayed.\n"
         "                                                 If not specified, consider displaying only one packet, as if -n 1\n";
 
-enum errCodes{
-    E_OK = 0,
-    E_FINDDEVS,
-    E_PCONFLICT,
-    E_NOOPTARG,
-    E_HANDLE
-};
-
 typedef struct parameters {
     char interface[MAX_BUFF];
     char port[10];
-    int packets_number;
+    unsigned int packets_number;
     bool tcp;
     bool udp;
     bool arp;
     bool icmp;
     bool printAll;
 } params_t ;
+
+enum errCodes{
+    E_OK = 0,
+    E_FINDDEVS,
+    E_PCONFLICT,
+    E_NOOPTARG
+};
 
 const char *errCodesMsg[] = {
         [E_OK] = "No errors\n",
@@ -93,7 +94,6 @@ params_t parameters_parsing(int argc, char *argv[]){
     p.udp = false;
     p.arp = false;
     p.icmp = false;
-    p.printAll = false;
 
     // Parsing long parameters (starting with "--")
 
@@ -118,6 +118,8 @@ params_t parameters_parsing(int argc, char *argv[]){
             }
         }
     }
+
+    // Parsing short parameters
 
     int c;
     while((c = getopt(argc, argv, ":i:p:tun:h")) != -1){
@@ -182,8 +184,10 @@ pcap_t* handling_pcap(char* device, const char* filter){
     struct bpf_program bpf;
     bpf_u_int32 netmask, sourceIP;
 
-    /* Obtaining a list of available devices in case
-     * the interface was not specified by user */
+    /*
+        Obtaining a list of available devices in case
+        the interface was not specified by user
+    */
     if(!strcmp(device, "")){
         if(pcap_findalldevs(&devices, errbuf) == -1){
             fprintf(stderr, "%s", errCodesMsg[E_FINDDEVS]);
@@ -198,26 +202,26 @@ pcap_t* handling_pcap(char* device, const char* filter){
     }
 
     /* Opening the device for data capturing */
-
-    if(pcap_lookupnet(device, &sourceIP, &netmask, errbuf) == -1){
-        fprintf(stderr, "Can't get netmask for device %s\n", device);
-        return NULL;
-    }
-
     handle = pcap_open_live(device, BUFSIZ, 1, 1000, errbuf);
     if(handle == NULL){
         fprintf(stderr, "Couldn't open device %s: %s\n", device, errbuf);
         return NULL;
     }
 
+    /* Obtaining netmask for filter, sourceip */
+    if(pcap_lookupnet(device, &sourceIP, &netmask, errbuf) == -1){
+        fprintf(stderr, "Can't get netmask for device %s\n", device);
+        return NULL;
+    }
+
     /* Compiling a filter for packets listening */
-    if(pcap_compile(handle, &bpf, (char *)filter, 0, netmask) == -1){
-        fprintf(stderr, "Couldn't parse filter %s: %s\n", filter, pcap_geterr(handle));
+    if(pcap_compile(handle, &bpf, (char *)filter, 0, netmask) == PCAP_ERROR){
+        fprintf(stderr, "Couldn't compile filter %s: %s\n", filter, pcap_geterr(handle));
         return NULL;
     }
 
     /* Installing a filter */
-    if(pcap_setfilter(handle, &bpf) == -1){
+    if(pcap_setfilter(handle, &bpf) == PCAP_ERROR){
         fprintf(stderr, "Couldn't install filter %s: %s\n", filter, pcap_geterr(handle));
         return NULL;
     }
@@ -239,24 +243,23 @@ void display_packet_data(char *timestamp, char *srcMAC, int srcP, char *srcIP, c
 
 void display_packet_dump(const u_char* packet, const int len){
 
-    // Source: https://stackoverflow.com/a/7776146
     // 16 values per one line
-    const int line = 16;
-    unsigned char buff[line + 1];
+    // Buffer has to be the size of 16 + 1 for '\0'
+    unsigned char buff[17];
 
     int i;
     for (i = 0; i < len; ++i) {
-        if((i % line) == 0){
+        if((i % 16) == 0){
             if(i != 0) printf("  %s\n", buff);
             printf("0x%04X:", i);
         }
         printf(" %02x", packet[i]);
         if(i % 16 == 7) printf(" ");
-        isprint(packet[i]) ? (buff[i % line] = packet[i]) : (buff[i % line] = '.');
-        buff[(i % line) + 1] = '\0';
+        isprint(packet[i]) ? (buff[i % 16] = packet[i]) : (buff[i % 16] = '.');
+        buff[(i % 16) + 1] = '\0';
     }
 
-    while((i % line) != 0){
+    while((i % 16) != 0){
         printf("   ");
         i++;
     }
@@ -269,7 +272,7 @@ char *timestamp_ctor(struct timeval ts_time){
     time(&rawtime);
     struct tm *info = localtime(&rawtime);
     static char buffer[MAX_TIMESTAMP_LEN];
-    size_t len = strftime(buffer, sizeof(buffer) - 1, "%FT%T%z", info);
+    size_t l = strftime(buffer, sizeof(buffer) - 1, "%FT%T%z", info);
 
     gettimeofday(&ts_time, NULL);
 
@@ -277,12 +280,12 @@ char *timestamp_ctor(struct timeval ts_time){
     char ms_char[4];
     sprintf(ms_char, "%d", ms);
 
-    if (len > 1) {
-        char minutes[] = {buffer[len-2], buffer[len-1], '\0'};
-        sprintf(buffer + len - 2, ":%s", minutes);
-        char timezone[] = {buffer[len-5], buffer[len-4], buffer[len-3], buffer[len-2], buffer[len-1], buffer[len], '\0'};
-        sprintf(buffer + len - 5, ".%s", ms_char);
-        sprintf(buffer + len - 1, "%s", timezone);
+    if (l > 1) {
+        char minutes[] = {buffer[l-2], buffer[l-1], '\0'};
+        sprintf(buffer + l - 2, ":%s", minutes);
+        char timezone[] = {buffer[l-5], buffer[l-4], buffer[l-3], buffer[l-2], buffer[l-1], buffer[l], '\0'};
+        sprintf(buffer + l - 5, ".%s", ms_char);
+        sprintf(buffer + l - 1, "%s", timezone);
     }
 
     return buffer;
@@ -298,7 +301,6 @@ void got_packet(u_char *args, struct pcap_pkthdr *header, u_char *packet){
     struct ip* iphdr;
     struct ip6_hdr* ip6hdr;
 
-    // struct icmp* icmphdr;
     struct tcphdr* tcphdr;
     struct udphdr* udphdr;
 
@@ -306,14 +308,11 @@ void got_packet(u_char *args, struct pcap_pkthdr *header, u_char *packet){
     char sourceMAC[MAX_MAC_LEN] = "", destinationMAC[MAX_MAC_LEN] = "";
     int sourcePort = 0, destinationPort = 0;
 
-    // Protocols:
-    // 1 for ICMP
-    // 6 for TCP
-    // 17 for UDP
-    
-    // https://unix.superglobalmegacorp.com/Net2/newsrc/netinet/if_ether.h.html
     struct ether_header *etherhdr = (struct ether_header *)packet;
     uint16_t ether_type = ntohs(etherhdr->ether_type);
+
+    sprintf(sourceMAC, MACSTR, etherhdr->ether_shost[0], etherhdr->ether_shost[1], etherhdr->ether_shost[2], etherhdr->ether_shost[3], etherhdr->ether_shost[4], etherhdr->ether_shost[5]);
+    sprintf(destinationMAC, MACSTR, etherhdr->ether_dhost[0], etherhdr->ether_dhost[1], etherhdr->ether_dhost[2], etherhdr->ether_dhost[3], etherhdr->ether_dhost[4], etherhdr->ether_dhost[5]);
 
     int ipvhdrLen, protocol;
 
@@ -338,14 +337,11 @@ void got_packet(u_char *args, struct pcap_pkthdr *header, u_char *packet){
             ip6hdr = (struct ip6_hdr *)(packet + ethhdrSize);
             // IPv6 has 40 bytes as fixed header length
             ipvhdrLen = 40;
+            protocol = ip6hdr->ip6_ctlun.ip6_un1.ip6_un1_nxt;
             inet_ntop(AF_INET6, &ip6hdr->ip6_src, sourceIP, INET6_ADDRSTRLEN);
             inet_ntop(AF_INET6, &ip6hdr->ip6_dst, destinationIP, INET6_ADDRSTRLEN);
-            // protocol?
             break;
     }
-
-    sprintf(sourceMAC, MACSTR, etherhdr->ether_shost[0], etherhdr->ether_shost[1], etherhdr->ether_shost[2], etherhdr->ether_shost[3], etherhdr->ether_shost[4], etherhdr->ether_shost[5]);
-    sprintf(destinationMAC, MACSTR, etherhdr->ether_dhost[0], etherhdr->ether_dhost[1], etherhdr->ether_dhost[2], etherhdr->ether_dhost[3], etherhdr->ether_dhost[4], etherhdr->ether_dhost[5]);
 
     switch(protocol){
         case PROTOCOL_TCP:
@@ -358,7 +354,11 @@ void got_packet(u_char *args, struct pcap_pkthdr *header, u_char *packet){
             sourcePort = ntohs(udphdr->uh_sport);
             destinationPort = ntohs(udphdr->uh_dport);
             break;
+        case PROTOCOL_ICMP_IPv4:
+        case PROTOCOL_ICMP_IPv6:
+            break;
         default:
+            fprintf(stderr, "Unknown protocol %d. Type ./ipk-sniffer -h for help\n", protocol);
             break;
     }
     display_packet_data(timestamp, sourceMAC, sourcePort, sourceIP, destinationMAC, destinationPort, destinationIP, header->len);
@@ -368,22 +368,31 @@ void got_packet(u_char *args, struct pcap_pkthdr *header, u_char *packet){
 char *filter_ctor(params_t p){
     static char filter[MAX_BUFF];
 
-    if (p.tcp) strcpy(filter, "tcp ");
-    else if (p.udp) strcpy(filter, "udp ");
-
-    if(p.printAll) *filter = 0;
+    if(p.arp){
+        if (p.tcp) strcpy(filter, "arp or tcp ");
+        else if (p.udp) strcpy(filter, "arp or udp ");
+        else if (p.icmp) strcpy(filter, "arp or icmp or icmp6 ");
+        else strcpy(filter, "arp ");
+    } else {
+        if (p.tcp) strcpy(filter, "tcp ");
+        else if (p.udp) strcpy(filter, "udp ");
+        else if (p.icmp) strcpy(filter, "icmp or icmp6 ");
+    }
 
     if(strcmp(p.port, "NONE")){
-        strcat(filter, p.port);
+        if(!strcmp(filter, "")) strcpy(filter, p.port);
+        else {
+            strcat(filter, "or ");
+            strcat(filter, p.port);
+        }
     }
+
     return filter;
 }
 
 int main(int argc, char *argv[]){
 
     params_t p = parameters_parsing(argc, argv);
-
-    // /* Debugging */ printf("parameters: %s %s %d %d %d %d %d\n", p.interface, p.port, p.packets_number, p.tcp, p.udp, p.arp, p.icmp);
 
     char *filter = filter_ctor(p);
 
