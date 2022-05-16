@@ -3,6 +3,8 @@
 ### Author: Alina Vinogradova, 2BIT
 ### [xvinog00@stud.fit.vutbr.cz](mailto:xvinog00@stud.fit.vutbr.cz)
 
+Evaluation: 16/20
+
 ### Application: packet sniffer in C
 Design and implement a network analyzer in C/C++/C# that will be able to
 a specific network interface to capture and filter packets.
